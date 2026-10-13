@@ -1,0 +1,210 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── App Models ──────────────────────────────────────────────────────────────
+
+model Task {
+  id       Int    @id @default(autoincrement())
+  title    String
+  priority Int    @default(1)
+
+  @@map("task")
+}
+
+// ─── Better Auth Models ───────────────────────────────────────────────────────
+
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime
+  updatedAt     DateTime
+  sessions      Session[]
+  accounts      Account[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}
+
+// Simulator IDs are scoped to a run; a restart cannot overwrite previous history.
+model SimulationRun {
+  id         String          @id @default(uuid()) @db.Uuid
+  created_at DateTime        @default(now())
+  source     String
+  sessions   MowingSession[]
+  zones      Zone[]
+
+  @@map("simulation_run")
+}
+
+model MowingSession {
+  id                   String        @id @default(uuid()) @db.Uuid
+  run_id               String        @db.Uuid
+  session_id           Int
+  start_time           DateTime
+  end_time             DateTime?
+  weather              String
+  bearing_wear         Float
+  duration_min         Int?
+  battery_start_pct    Float?
+  battery_end_pct      Float?
+  rows                 Int?
+  area_covered_m2      Float?
+  mean_motor_current_a Float?
+  peak_motor_current_a Float?
+  anomaly_rows         Int?
+  sessions_to_failure  Int?
+  ended_with_error     String?
+  run                  SimulationRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  readings             Reading[]
+  events               MowerEvent[]
+
+  @@unique([run_id, session_id])
+  @@index([start_time, id])
+  @@map("mowing_session")
+}
+
+model Zone {
+  id                  String        @id @default(uuid()) @db.Uuid
+  run_id              String        @db.Uuid
+  zone_id             Int
+  area_m2             Float
+  grass_density       Float
+  avg_slope_deg       Float
+  avg_motor_current_a Float
+  avg_speed_mps       Float
+  time_spent_s        Int
+  anomaly_count       Int
+  obstacle_events     Int
+  coverage_pct        Float
+  run                 SimulationRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  readings            Reading[]
+  events              MowerEvent[]
+
+  @@unique([run_id, zone_id])
+  @@map("zone")
+}
+
+model Reading {
+  id              String        @id @default(uuid()) @db.Uuid
+  session_ref     String        @db.Uuid
+  zone_ref        String        @db.Uuid
+  timestamp       DateTime
+  session_id      Int
+  zone_id         Int
+  latitude        Float
+  longitude       Float
+  speed_mps       Float
+  heading_deg     Float
+  mode            MowerMode
+  battery_pct     Float
+  voltage_v       Float
+  current_a       Float
+  battery_temp_c  Float
+  motor_current_a Float
+  motor_rpm       Int
+  slope_deg       Float
+  grass_load      Float
+  ambient_temp_c  Float
+  humidity_pct    Float
+  rain            Boolean
+  is_anomaly      Boolean
+  session         MowingSession @relation(fields: [session_ref], references: [id], onDelete: Cascade)
+  zone            Zone          @relation(fields: [zone_ref], references: [id], onDelete: Cascade)
+
+  @@unique([session_ref, timestamp])
+  @@index([timestamp, id])
+  @@index([zone_ref, timestamp])
+  @@map("reading")
+}
+
+model MowerEvent {
+  id          String         @id @default(uuid()) @db.Uuid
+  session_ref String         @db.Uuid
+  zone_ref    String         @db.Uuid
+  timestamp   DateTime
+  session_id  Int
+  zone_id     Int
+  latitude    Float
+  longitude   Float
+  event_type  MowerEventType
+  error_code  String?
+  session     MowingSession  @relation(fields: [session_ref], references: [id], onDelete: Cascade)
+  zone        Zone           @relation(fields: [zone_ref], references: [id], onDelete: Cascade)
+
+  @@unique([session_ref, timestamp, event_type])
+  @@index([timestamp, id])
+  @@index([zone_ref, timestamp])
+  @@map("mower_event")
+}
+
+enum MowerMode {
+  mowing
+  returning
+  charging
+}
+
+enum MowerEventType {
+  obstacle_detected
+  bump
+  high_load
+  stall
+  unexpected_stop
+  lift
+  tilt
+}

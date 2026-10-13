@@ -1,0 +1,58 @@
+{
+	"name": "jamk-mmit-lawnmover",
+	"version": "0.0.1",
+	"devDependencies": {
+		"@sveltejs/adapter-cloudflare": "^8.0.0",
+		"@sveltejs/adapter-node": "^6.0.0",
+		"@sveltejs/kit": "^3.0.0",
+		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"@tailwindcss/typography": "^0.5.19",
+		"@tailwindcss/vite": "^4.3.0",
+		"@types/bun": "^1.4.3",
+		"@types/node": "^24",
+		"auth": "^1.6.24",
+		"better-auth": "^1.6.24",
+		"prettier": "^3.8.3",
+		"prettier-plugin-svelte": "^4.1.0",
+		"prettier-plugin-tailwindcss": "^0.8.0",
+		"prisma": "^6",
+		"svelte": "^5.57.1",
+		"svelte-check": "^4.6.0",
+		"tailwindcss": "^4.3.0",
+		"typescript": "^6.0.3",
+		"vite": "^8.3.0",
+		"wrangler": "^4.97.0"
+	},
+	"imports": {
+		"#lib": "./src/lib/index.js",
+		"#lib/*": "./src/lib/*"
+	},
+	"private": true,
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"lint": "prettier --check .",
+		"format": "prettier --write .",
+		"db:start": "docker compose up",
+		"db:generate": "prisma generate",
+		"db:migrate": "prisma migrate dev",
+		"db:push": "prisma db push",
+		"db:studio": "prisma studio",
+		"start": "node --env-file-if-exists=.env build",
+		"test": "bun test tests",
+		"test:integration": "RUN_DB_TESTS=1 bun test tests/integration.test.ts",
+		"db:deploy": "prisma migrate deploy"
+	},
+	"type": "module",
+	"dependencies": {
+		"@prisma/client": "^6",
+		"zod": "^4.6.7"
+	},
+	"engines": {
+		"node": ">=22.12.0"
+	}
+}
