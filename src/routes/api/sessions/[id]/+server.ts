@@ -1,9 +1,8 @@
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 import { db } from '#lib/server/db/index.ts';
-import { api, requireUser } from '#lib/server/mower/http.ts';
-export const GET = api(async ({ locals, params }) => {
-	requireUser(locals);
+import { api } from '#lib/server/mower/http.ts';
+export const GET = api(async ({ params }) => {
 	const id = z.uuid().parse(params.id);
 	const data = await db.mowingSession.findUnique({
 		where: { id },

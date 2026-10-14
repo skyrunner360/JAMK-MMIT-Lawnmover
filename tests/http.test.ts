@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test';
-import { readJson, requireUser, requireIngestToken } from '../src/lib/server/mower/http';
+import { readJson, requireIngestToken } from '../src/lib/server/mower/http';
 
-test('API guards reject missing sessions and incorrect ingestion tokens', () => {
-	expect(() => requireUser({})).toThrow();
+test('API guards reject incorrect ingestion tokens', () => {
 	expect(() => requireIngestToken(new Headers(), 'secret')).toThrow();
 	expect(() =>
 		requireIngestToken(new Headers({ authorization: 'Bearer wrong' }), 'secret')
@@ -41,7 +40,7 @@ test('JSON reader rejects malformed and oversized payloads', async () => {
 		)
 	).toEqual({ action: 'stop' });
 });
-test('API rejects cross-origin cookie-authenticated mutations', async () => {
+test('API rejects cross-origin mutations', async () => {
 	const { api } = await import('../src/lib/server/mower/http');
 	let executed = false;
 	const handler = api(async () => {

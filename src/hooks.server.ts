@@ -5,8 +5,11 @@ import { auth } from '#lib/server/auth.ts';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// Health and device ingestion use their own checks and do not need cookie lookup.
-	if (event.url.pathname === '/api/health' || event.url.pathname === '/api/ingest')
+	// Dashboard demo temporarily bypasses authentication. Retain the auth demo separately.
+	if (
+		!event.url.pathname.startsWith('/demo/better-auth') &&
+		!event.url.pathname.startsWith('/api/auth')
+	)
 		return resolve(event);
 	try {
 		const session = await auth.api.getSession({ headers: event.request.headers });

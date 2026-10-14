@@ -1,25 +1,29 @@
-# Robotic lawnmower backend
+# Fieldwork — robotic lawnmower dashboard
 
-A TypeScript SvelteKit 3 backend using Prisma 6, PostgreSQL, and Better Auth. It stores simulated mower readings, events, sessions, and zone statistics and streams live updates with Server-Sent Events (SSE).
+A responsive Svelte 5 dashboard backed by SvelteKit 3, Prisma, and PostgreSQL. It displays live battery and motor charts, speed, area coverage, a selectable zone map, recent events, and session history. Pause/resume simulation, choose a chart window, filter events, expand session details, or export the displayed telemetry as CSV.
 
-The application runs as a **single persistent Node process**. The simulator reads local CSV files and maintains a process-wide loop; the project now uses the Node adapter instead of Cloudflare Workers. Node 22.12+ and Bun are required.
+The dashboard and its data/control APIs **temporarily require no sign-in**, as requested for this demo. Existing Better Auth code is retained separately for later use. External device ingestion still uses its bearer token. Cross-origin control requests are rejected.
 
-## Setup
+## Development with Docker PostgreSQL
+
+Install Node 22.12+, Bun, and Docker, then run:
 
 ```sh
 bun install
-# If .env does not exist yet, copy .env.example to .env.
-# Set DATABASE_URL, ORIGIN, and a random BETTER_AUTH_SECRET (32+ characters).
-bun run db:start
-```
-
-The database command runs Docker Compose in the foreground. In another terminal, for a **new, empty database**:
-
-```sh
-bun run db:generate
-bun run db:deploy
 bun run dev
 ```
+
+This command starts PostgreSQL 18 with Docker Compose, waits for its health check, generates the Prisma client, applies pending migrations, and starts the dashboard at **http://localhost:5173**. On a fresh workspace no manual database setup is needed. The first dashboard visit starts the simulator; reloading a paused simulation preserves its paused state.
+
+Development intentionally uses the local Compose database (`root` / `mysecretpassword`, database `local`) regardless of a production `DATABASE_URL` in `.env`. Data persists in the existing `pgdata` volume. Stopping the development server leaves PostgreSQL running.
+
+```sh
+bun run dev:setup       # Start Docker DB and apply migrations, without the web server
+bun run db:stop         # Stop PostgreSQL, preserving its volume
+bun run dev -- --port 5174  # Use another app port; origin follows this port
+```
+
+Set `DEV_DB_PORT` if local port 5432 is occupied, or `DEV_ORIGIN` for a different development origin. `bun run dev:app` launches only Vite using your own database/environment configuration. Production still uses `DATABASE_URL`, `ORIGIN`, and `BETTER_AUTH_SECRET` from the environment or `.env` (see `.env.example`).
 
 For an existing database containing the original Task and Better Auth tables but no Prisma migration history, first verify it matches `prisma/migrations/202610140001_initial/migration.sql`. Then baseline that migration before deploying the additive mower migration:
 
@@ -28,13 +32,11 @@ bunx prisma migrate resolve --applied 202610140001_initial
 bun run db:deploy
 ```
 
-Do not baseline a database with a different schema. No migration resets or deletes the existing authentication or Task tables. Tests during implementation used a separate temporary database; your `.env` and configured database were not changed.
-
-Register/sign in at `/demo/better-auth/login` or use Better Auth's `/api/auth/sign-up/email` and `/api/auth/sign-in/email` endpoints. This is a shared student demo: **every registered user can see the same mower and start/stop simulation**. The health endpoint is public; machine ingestion has a separate bearer credential.
+Do not baseline a database with a different schema. The dashboard setup applies additive migrations and preserves existing data.
 
 ## Simulator
 
-Opening `/api/stream` while authenticated starts the simulator at speed 10 (one reading per wall-clock second). You can also start it with the control API. It keeps running when a browser disconnects and stops when explicitly requested or when persistence fails.
+Opening `/api/stream` starts the simulator at speed 10 (one reading per wall-clock second). The dashboard uses `/api/stream?autostart=false` and controls startup explicitly, so reconnecting does not undo a pause. You can also start it with the control API. It keeps running when a browser disconnects and stops when explicitly requested or when persistence fails.
 
 The supplied simulator is available through:
 
@@ -86,21 +88,17 @@ Filters:
 
 All lists accept `limit` and `offset`. Unknown, duplicated, malformed, and endpoint-inapplicable query parameters return 400. `session_id` **in query strings is the database session UUID** returned as `id` by `/api/sessions`; `session_id` inside simulator payloads is its numeric source ID. Readings/events additionally expose `session_ref` and `zone_ref` database UUIDs.
 
-Example using a cookie saved from sign-in:
+Examples (no sign-in required):
 
 ```sh
-curl -c /tmp/mower-cookies -H 'Content-Type: application/json' \
-  -d '{"email":"student@example.com","password":"your-password"}' \
-  http://localhost:5173/api/auth/sign-in/email
-
-curl -b /tmp/mower-cookies -H 'Content-Type: application/json' \
+curl -H 'Content-Type: application/json' \
   -d '{"action":"start"}' http://localhost:5173/api/simulator
 
-curl -b /tmp/mower-cookies 'http://localhost:5173/api/readings?limit=20&is_anomaly=true'
-curl -N -b /tmp/mower-cookies http://localhost:5173/api/stream
+curl 'http://localhost:5173/api/readings?limit=20&is_anomaly=true'
+curl -N http://localhost:5173/api/stream
 ```
 
-Browser usage after signing in:
+Browser usage:
 
 ```js
 const events = new EventSource('/api/stream');
@@ -155,10 +153,17 @@ Database tests need a dedicated migrated PostgreSQL test database. They create a
 DATABASE_URL='postgresql://.../mower_test' bun run test:integration
 ```
 
-The HTTP test needs a running app pointing to a disposable test database with `MOWER_INGEST_TOKEN` configured. It creates a test account and simulated data:
+The HTTP test needs a running app and creates simulated data. It verifies the public API and leaves the simulator paused:
 
 ```sh
 MOWER_TEST_URL='http://localhost:5173' bun test tests/e2e.test.ts
+```
+
+Browser tests cover desktop (1440 px) and mobile (390 px), live data, pause/resume, paused reloads, zone selection, CSV downloads, session details, and horizontal overflow:
+
+```sh
+bunx playwright install chromium --only-shell
+bun run test:browser  # With bun run dev already running
 ```
 
 ## Deployment

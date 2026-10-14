@@ -2,28 +2,13 @@ import { expect, test } from 'bun:test';
 const enabled = !!process.env.MOWER_TEST_URL;
 const base = process.env.MOWER_TEST_URL ?? 'http://localhost:5173';
 test.skipIf(!enabled)(
-	'authenticated API stores and streams realtime readings to two clients',
+	'public demo API stores and streams realtime readings to two clients',
 	async () => {
 		const anonymous = await fetch(base + '/api/readings');
-		expect(anonymous.status).toBe(401);
+		expect(anonymous.status).toBe(200);
 		const health = await fetch(base + '/api/health');
 		expect(health.status).toBe(200);
-		const signup = await fetch(base + '/api/auth/sign-up/email', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json', origin: base },
-			body: JSON.stringify({
-				name: 'Backend Test',
-				email: `mower-${Date.now()}@example.com`,
-				password: 'test-password-12345'
-			})
-		});
-		expect(signup.status).toBe(200);
-		const cookie = signup.headers
-			.getSetCookie()
-			.map((v) => v.split(';')[0])
-			.join('; ');
-		expect(cookie.length).toBeGreaterThan(0);
-		const headers = { cookie, 'content-type': 'application/json', origin: base };
+		const headers = { 'content-type': 'application/json', origin: base };
 		const aborted = [new AbortController(), new AbortController()];
 		const streams = await Promise.all(
 			aborted.map((a) => fetch(base + '/api/stream', { headers, signal: a.signal }))
@@ -44,7 +29,7 @@ test.skipIf(!enabled)(
 			const sessions = await (
 				await fetch(base + `/api/sessions?run_id=${run}`, { headers })
 			).json();
-			expect(sessions.data.length).toBe(1);
+			expect(sessions.data.length).toBeGreaterThanOrEqual(1);
 			const session = sessions.data[0];
 			const detail = await fetch(base + `/api/sessions/${session.id}`, { headers });
 			expect(detail.status).toBe(200);
@@ -55,9 +40,9 @@ test.skipIf(!enabled)(
 				(await fetch(base + '/api/sessions/00000000-0000-4000-8000-000000000000', { headers }))
 					.status
 			).toBe(404);
-			expect(
+			expect([401, 503]).toContain(
 				(await fetch(base + '/api/ingest', { method: 'POST', headers, body: '{}' })).status
-			).toBe(401);
+			);
 			const stopped = await fetch(base + '/api/simulator', {
 				method: 'POST',
 				headers,

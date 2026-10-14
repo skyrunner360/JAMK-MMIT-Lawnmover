@@ -2,6 +2,7 @@
 	"name": "jamk-mmit-lawnmover",
 	"version": "0.0.1",
 	"devDependencies": {
+		"@playwright/test": "^1.64.0",
 		"@sveltejs/adapter-cloudflare": "^8.0.0",
 		"@sveltejs/adapter-node": "^6.0.0",
 		"@sveltejs/kit": "^3.0.0",
@@ -29,7 +30,7 @@
 	},
 	"private": true,
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "bun scripts/dev.mjs",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -37,7 +38,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check .",
 		"format": "prettier --write .",
-		"db:start": "docker compose up",
+		"db:start": "docker compose up -d --wait db",
 		"db:generate": "prisma generate",
 		"db:migrate": "prisma migrate dev",
 		"db:push": "prisma db push",
@@ -45,7 +46,11 @@
 		"start": "node --env-file-if-exists=.env build",
 		"test": "bun test tests",
 		"test:integration": "RUN_DB_TESTS=1 bun test tests/integration.test.ts",
-		"db:deploy": "prisma migrate deploy"
+		"db:deploy": "prisma migrate deploy",
+		"dev:app": "vite dev",
+		"db:stop": "docker compose stop db",
+		"dev:setup": "bun scripts/dev.mjs --setup-only",
+		"test:browser": "playwright test"
 	},
 	"type": "module",
 	"dependencies": {

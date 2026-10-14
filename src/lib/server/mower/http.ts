@@ -3,9 +3,6 @@ import { error, isHttpError, json, type RequestHandler } from '@sveltejs/kit';
 import { ZodError } from 'zod';
 import { IngestionConflict } from './repository';
 
-export function requireUser(locals: { user?: unknown }) {
-	if (!locals.user) error(401, 'Sign in to access mower data');
-}
 export function requireIngestToken(headers: Headers, token: string | undefined) {
 	if (!token) error(503, 'External ingestion is not configured');
 	const actual = Buffer.from(headers.get('authorization') ?? '');
@@ -48,7 +45,6 @@ export function api(handler: RequestHandler): RequestHandler {
 		try {
 			const origin = event.request.headers.get('origin');
 			if (
-				event.locals.user &&
 				!['GET', 'HEAD', 'OPTIONS'].includes(event.request.method) &&
 				origin &&
 				origin !== event.url.origin

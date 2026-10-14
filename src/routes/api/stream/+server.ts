@@ -1,9 +1,8 @@
-import { api, requireUser } from '#lib/server/mower/http.ts';
+import { api } from '#lib/server/mower/http.ts';
 import { getMowerService } from '#lib/server/mower/service.ts';
 import { createEventStream } from '#lib/server/mower/stream.ts';
-export const GET = api(async ({ locals, request }) => {
-	requireUser(locals);
+export const GET = api(async ({ request, url }) => {
 	const service = getMowerService();
-	await service.start();
+	if (url.searchParams.get('autostart') !== 'false') await service.start();
 	return createEventStream(service, request.signal);
 });

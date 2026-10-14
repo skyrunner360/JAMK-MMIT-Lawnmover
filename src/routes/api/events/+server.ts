@@ -1,9 +1,8 @@
 import { json } from '@sveltejs/kit';
 import { db } from '#lib/server/db/index.ts';
-import { api, requireUser } from '#lib/server/mower/http.ts';
+import { api } from '#lib/server/mower/http.ts';
 import { parseQuery } from '#lib/server/mower/validation.ts';
-export const GET = api(async ({ locals, url }) => {
-	requireUser(locals);
+export const GET = api(async ({ url }) => {
 	const q = parseQuery(url.searchParams, [
 		'limit',
 		'offset',
