@@ -138,6 +138,7 @@ export const querySchema = z
 		limit: queryInt(1, 200).default(50),
 		offset: queryInt(0, 1000000).default(0),
 		run_id: z.uuid().optional(),
+		machine_id: z.uuid().optional(),
 		session_id: z.uuid().optional(),
 		zone_id: queryInt(1, 2147483647).optional(),
 		mode: modes.optional(),

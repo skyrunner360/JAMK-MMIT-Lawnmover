@@ -7,6 +7,7 @@ export const GET = api(async ({ url }) => {
 		'limit',
 		'offset',
 		'run_id',
+		'machine_id',
 		'session_id',
 		'zone_id',
 		'event_type',

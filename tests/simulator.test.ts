@@ -14,7 +14,7 @@ test('demo dataset generates valid readings, events, completed sessions and zone
 	await sim.start();
 	expect(readings).toBeGreaterThan(100);
 	expect([...types].sort()).toEqual(['event', 'reading', 'session_end', 'session_start', 'zones']);
-	expect(sim.snapshot().zones.length).toBe(26);
+	expect(sim.snapshot().zones.length).toBe(60);
 });
 test('stop and restart continues without replaying the session start or skipping a reading', async () => {
 	const sim = new MowerSimulator({ speed: 1000, sessions: 1, gapSeconds: 0, seed: 1 });
@@ -41,4 +41,10 @@ test('generated bearing wear stays valid across several synthetic sessions', asy
 	});
 	await sim.start();
 	expect(ends).toBe(5);
+});
+test('synthetic sixty-zone property visits zones beyond the original footprint',async()=>{
+ const sim=new MowerSimulator({speed:Infinity,sessions:5,gapSeconds:0,seed:42,fresh:true});
+ const visited=new Set<number>();
+ sim.on('message',(raw:unknown)=>{const m=parseMessage(raw);if(m.type==='reading'&&m.data.mode==='mowing')visited.add(m.data.zone_id);});
+ await sim.start();expect(Math.max(...visited)).toBeGreaterThan(26);
 });

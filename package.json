@@ -50,7 +50,10 @@
 		"dev:app": "vite dev",
 		"db:stop": "docker compose stop db",
 		"dev:setup": "bun scripts/dev.mjs --setup-only",
-		"test:browser": "playwright test"
+		"test:browser": "playwright test",
+		"machine:provision": "bun scripts/provision-machine.ts",
+		"summaries:backfill": "bun scripts/backfill-summaries.ts",
+		"benchmark:fleet": "bun scripts/benchmark-fleet.ts"
 	},
 	"type": "module",
 	"dependencies": {

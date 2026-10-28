@@ -61,7 +61,11 @@ export function api(handler: RequestHandler): RequestHandler {
 					},
 					{ status: 400 }
 				);
-			if (cause instanceof IngestionConflict)
+			// Vite can retain the process-wide service while reloading this module.
+			if (
+				cause instanceof IngestionConflict ||
+				(cause instanceof Error && cause.constructor.name === 'IngestionConflict')
+			)
 				return json({ error: cause.message }, { status: 409 });
 			console.error('Mower API failed:', cause);
 			return json({ error: 'Mower service unavailable' }, { status: 503 });

@@ -27,3 +27,6 @@ vite.config.ts.timestamp-*
 # Browser test artifacts
 /test-results/
 /playwright-report/
+
+# Device-local telemetry outbox (may contain location data)
+/mower_outbox/

@@ -5,7 +5,9 @@ import { parseQuery } from './validation';
 export function telemetryFilters(q: ReturnType<typeof parseQuery>): Prisma.ReadingWhereInput {
 	return {
 		...(q.session_id ? { session_ref: q.session_id } : {}),
-		...(q.run_id ? { session: { run_id: q.run_id } } : {}),
+		...(q.run_id || q.machine_id
+			? { session: { run_id: q.run_id, run: { machine_id: q.machine_id } } }
+			: {}),
 		...(q.zone_id ? { zone_id: q.zone_id } : {}),
 		...(q.from || q.to ? { timestamp: { gte: q.from, lte: q.to } } : {})
 	};

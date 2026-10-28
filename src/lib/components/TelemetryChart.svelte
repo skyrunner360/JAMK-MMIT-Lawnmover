@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { chartPoints, formatNumber, formatTime, type Reading } from '#lib/dashboard/data.ts';
+	import { chartPoints, formatNumber, type Reading } from '#lib/dashboard/data.ts';
 	let {
 		rows,
 		title,
@@ -16,6 +16,11 @@
 		maximum?: number;
 	} = $props();
 	const id = $props.id();
+	function captureTime(value: string | undefined) {
+		return value
+			? new Date(value).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC'
+			: 'Unknown';
+	}
 	let max = $derived(Math.max(maximum, ...rows.map((r) => r[metric])));
 	let points = $derived(chartPoints(rows, metric, 0, max));
 	let latest = $derived(rows.at(-1)?.[metric]);
@@ -25,10 +30,12 @@
 <article class="panel chart-panel">
 	<div class="panel-heading">
 		<div>
-			<p class="eyebrow">TELEMETRY</p>
+			<p class="eyebrow">CAPTURED TELEMETRY</p>
 			<h2>{title}</h2>
 		</div>
-		<span class="chart-value" style:color>{formatNumber(latest)} <small>{unit}</small></span>
+		<span class="chart-value" style:color
+			><small>Last captured value</small><br />{formatNumber(latest)} <small>{unit}</small></span
+		>
 	</div>
 	<div class="chart-body">
 		<div class="y-axis">
@@ -72,11 +79,11 @@
 					/>{/if}
 			</svg>
 			{#if rows.length < 2}<div class="chart-empty">
-					{rows.length ? 'Collecting the next sample…' : 'Waiting for simulation data'}
+					{rows.length ? 'Collecting the next sample…' : 'No captured readings in this page'}
 				</div>{/if}
 			<div class="x-axis">
-				<span>{formatTime(rows[0]?.timestamp)}</span><span>Simulated time · UTC</span><span
-					>{formatTime(rows.at(-1)?.timestamp)}</span
+				<span>{captureTime(rows[0]?.timestamp)}</span><span>Capture time · UTC</span><span
+					>{captureTime(rows.at(-1)?.timestamp)}</span
 				>
 			</div>
 		</div>

@@ -85,10 +85,15 @@ model Verification {
 model SimulationRun {
   id         String          @id @default(uuid()) @db.Uuid
   created_at DateTime        @default(now())
+  machine_id String          @default("00000000-0000-4000-8000-000000000002") @db.Uuid
+  cycle_id   String?         @db.Uuid
+  machine    Machine         @relation(fields: [machine_id], references: [id])
+  cycle      MowingCycle?    @relation(fields: [cycle_id], references: [id])
   source     String
   sessions   MowingSession[]
   zones      Zone[]
 
+  @@index([machine_id, created_at])
   @@map("simulation_run")
 }
 
@@ -115,6 +120,7 @@ model MowingSession {
   events               MowerEvent[]
 
   @@unique([run_id, session_id])
+  @@index([run_id, start_time, id])
   @@index([start_time, id])
   @@map("mowing_session")
 }
@@ -144,6 +150,7 @@ model Reading {
   id              String        @id @default(uuid()) @db.Uuid
   session_ref     String        @db.Uuid
   zone_ref        String        @db.Uuid
+  received_at     DateTime?     @default(now())
   timestamp       DateTime
   session_id      Int
   zone_id         Int
@@ -168,6 +175,7 @@ model Reading {
   zone            Zone          @relation(fields: [zone_ref], references: [id], onDelete: Cascade)
 
   @@unique([session_ref, timestamp])
+  @@index([session_ref, timestamp, id])
   @@index([timestamp, id])
   @@index([zone_ref, timestamp])
   @@map("reading")
@@ -177,6 +185,7 @@ model MowerEvent {
   id          String         @id @default(uuid()) @db.Uuid
   session_ref String         @db.Uuid
   zone_ref    String         @db.Uuid
+  received_at DateTime?      @default(now())
   timestamp   DateTime
   session_id  Int
   zone_id     Int
@@ -188,6 +197,7 @@ model MowerEvent {
   zone        Zone           @relation(fields: [zone_ref], references: [id], onDelete: Cascade)
 
   @@unique([session_ref, timestamp, event_type])
+  @@index([session_ref, timestamp, id])
   @@index([timestamp, id])
   @@index([zone_ref, timestamp])
   @@map("mower_event")
@@ -207,4 +217,101 @@ enum MowerEventType {
   unexpected_stop
   lift
   tilt
+}
+
+model Property {
+  id       String         @id @default(uuid()) @db.Uuid
+  name     String
+  machines Machine[]
+  zones    PropertyZone[]
+  cycles   MowingCycle[]
+
+  @@map("property")
+}
+
+model Machine {
+  id               String            @id @default(uuid()) @db.Uuid
+  property_id      String            @db.Uuid
+  name             String
+  token_hash       String?           @unique
+  last_received_at DateTime?
+  last_observed_at DateTime?
+  property         Property          @relation(fields: [property_id], references: [id])
+  receipts         DeliveryReceipt[]
+  runs             SimulationRun[]
+  summaries        DailySummary[]
+  progress         ZoneProgress[]
+
+  @@index([property_id, id])
+  @@map("machine")
+}
+
+model PropertyZone {
+  id          String         @id @default(uuid()) @db.Uuid
+  property_id String         @db.Uuid
+  zone_id     Int
+  area_m2     Float
+  property    Property       @relation(fields: [property_id], references: [id])
+  progress    ZoneProgress[]
+
+  @@unique([property_id, zone_id])
+  @@map("property_zone")
+}
+
+model MowingCycle {
+  id           String          @id @default(uuid()) @db.Uuid
+  property_id  String          @db.Uuid
+  started_at   DateTime        @default(now())
+  completed_at DateTime?
+  historical   Boolean         @default(false)
+  property     Property        @relation(fields: [property_id], references: [id])
+  runs         SimulationRun[]
+  progress     ZoneProgress[]
+
+  @@index([property_id, started_at])
+  @@map("mowing_cycle")
+}
+
+model ZoneProgress {
+  id           String       @id @default(uuid()) @db.Uuid
+  cycle_id     String       @db.Uuid
+  machine_id   String       @db.Uuid
+  zone_ref     String       @db.Uuid
+  coverage_pct Float
+  observed_at  DateTime?
+  cycle        MowingCycle  @relation(fields: [cycle_id], references: [id])
+  machine      Machine      @relation(fields: [machine_id], references: [id])
+  zone         PropertyZone @relation(fields: [zone_ref], references: [id])
+
+  @@unique([cycle_id, machine_id, zone_ref])
+  @@map("zone_progress")
+}
+
+model DailySummary {
+  machine_id        String   @db.Uuid
+  day               DateTime @db.Date
+  sample_count      Int
+  anomaly_count     Int
+  motor_current_sum Float
+  motor_current_max Float
+  temperature_max   Float
+  battery_sum       Float
+  battery_min       Float
+  machine           Machine  @relation(fields: [machine_id], references: [id])
+
+  @@id([machine_id, day])
+  @@map("daily_summary")
+}
+
+model DeliveryReceipt {
+  machine_id   String    @db.Uuid
+  message_id   String    @db.Uuid
+  run_id       String    @db.Uuid
+  payload_hash String
+  received_at  DateTime  @default(now())
+  captured_at  DateTime?
+  machine      Machine   @relation(fields: [machine_id], references: [id], onDelete: Cascade)
+
+  @@id([machine_id, message_id])
+  @@map("delivery_receipt")
 }

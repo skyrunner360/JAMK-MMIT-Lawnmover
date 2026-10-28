@@ -9,6 +9,12 @@ test.skipIf(!enabled)(
 		const health = await fetch(base + '/api/health');
 		expect(health.status).toBe(200);
 		const headers = { 'content-type': 'application/json', origin: base };
+		const fleet = await (await fetch(base + '/api/fleet')).json();
+		await fetch(base + '/api/cycles', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({ property_id: fleet.property.id, action: 'start' })
+		});
 		const aborted = [new AbortController(), new AbortController()];
 		const streams = await Promise.all(
 			aborted.map((a) => fetch(base + '/api/stream', { headers, signal: a.signal }))
@@ -33,8 +39,8 @@ test.skipIf(!enabled)(
 			const session = sessions.data[0];
 			const detail = await fetch(base + `/api/sessions/${session.id}`, { headers });
 			expect(detail.status).toBe(200);
-			const zones = await (await fetch(base + '/api/zones', { headers })).json();
-			expect(zones.data.length).toBe(26);
+			const zones = await (await fetch(base + '/api/zones?limit=100', { headers })).json();
+			expect(zones.data.length).toBe(60);
 			expect((await fetch(base + '/api/readings?limit=999', { headers })).status).toBe(400);
 			expect(
 				(await fetch(base + '/api/sessions/00000000-0000-4000-8000-000000000000', { headers }))

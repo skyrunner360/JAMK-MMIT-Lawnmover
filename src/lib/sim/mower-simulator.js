@@ -22,7 +22,7 @@
  *   replay              streams the original CSV rows in order (timestamps shifted to "now")
  */
 import { EventEmitter } from 'node:events';
-import { createHttpSink } from './http-sink.js';
+import { createDurableSink } from './durable-sink.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -33,13 +33,13 @@ import { pathToFileURL } from 'node:url';
 const TICK_S = 10; // one main_log row every 10 s (as in the CSV)
 const CUT_WIDTH_M = 0.25; // area_covered ≈ Σ speed * 10 s * 0.25 m
 const M2_PER_TICK = 1.055; // zone area / dwell ticks, measured from the CSV
-const GRID = { lon0: 24.65419, w: 0.000235, lat0: [60.20363, 60.20378, 60.20392], h: 0.00007 };
+const GRID = {
+	lon0: 24.65419,
+	w: 0.000235,
+	lat0: [60.20363, 60.20378, 60.20392, 60.20407, 60.20421, 60.20436],
+	h: 0.00007
+};
 const DOCK = { lat: 60.203639, lon: 24.654208 };
-// Boustrophedon order of zones over the 3-row grid (zones 1-10, 20-11, 21-26)
-const PATH = [
-	1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26
-];
-
 // Signal models fitted on the CSV (non-event mowing rows); residuals are white noise.
 const FIT = {
 	speed: (grass) => 0.4992 - 0.1591 * grass, // sd 0.020
@@ -224,9 +224,14 @@ function buildProfile(ds) {
 /* ------------------------------------------------------------------ geometry */
 
 function zoneBox(id) {
-	const row = id <= 10 ? 0 : id <= 20 ? 1 : 2;
-	const col = row === 0 ? id - 1 : row === 1 ? id - 11 : id - 21;
-	return { row, col, lon0: GRID.lon0 + col * GRID.w, lat0: GRID.lat0[row] };
+	const row = Math.floor((id - 1) / 10);
+	const col = (id - 1) % 10;
+	return {
+		row,
+		col,
+		lon0: GRID.lon0 + col * GRID.w,
+		lat0: GRID.lat0[row] ?? GRID.lat0[0] + row * 0.000145
+	};
 }
 
 function zoneAt(lat, lon) {
@@ -236,8 +241,8 @@ function zoneAt(lat, lon) {
 		const d = Math.abs(lat - (b + GRID.h / 2));
 		if (d < best) ((best = d), (row = i));
 	});
-	const col = clamp(Math.floor((lon - GRID.lon0) / GRID.w), 0, row === 2 ? 5 : 9);
-	return row === 0 ? col + 1 : row === 1 ? 11 + col : 21 + col;
+	const col = clamp(Math.floor((lon - GRID.lon0) / GRID.w), 0, 9);
+	return row * 10 + col + 1;
 }
 
 /* ------------------------------------------------------------------ live zone table */
@@ -321,6 +326,14 @@ export class MowerSimulator extends EventEmitter {
 		};
 		this.ds = opts.dataset ?? loadDataset(opts.dataDir);
 		this.P = buildProfile(this.ds);
+		// Boustrophedon order follows every supplied zone, including all sixty demo zones.
+		this.zonePath = this.ds.zones.rows
+			.map((z) => z.zone_id)
+			.sort((a, b) => {
+				const ra = Math.floor((a - 1) / 10),
+					rb = Math.floor((b - 1) / 10);
+				return ra - rb || (ra % 2 ? b - a : a - b);
+			});
 		this.rng = makeRng(opts.seed ?? Date.now());
 		this.startMs = opts.start
 			? typeof opts.start === 'number'
@@ -464,7 +477,7 @@ export class MowerSimulator extends EventEmitter {
 		let id = opts.firstSession ?? P.lastSession + 1;
 		let wear = opts.wear;
 		let clock = this.startMs;
-		let pathIdx = rng.int(0, PATH.length - 1);
+		let pathIdx = rng.int(0, this.zonePath.length - 1);
 
 		for (let n = 0; !opts.sessions || n < opts.sessions; n++) {
 			if (n > 0) {
@@ -474,7 +487,7 @@ export class MowerSimulator extends EventEmitter {
 			}
 			const res = yield* this.#session(id++, wear, clock, pathIdx);
 			clock = res.endMs;
-			pathIdx = (res.pathIdx - rng.int(0, 2) + PATH.length) % PATH.length; // next run overlaps the end of the last one
+			pathIdx = (res.pathIdx - rng.int(0, 2) + this.zonePath.length) % this.zonePath.length; // next run overlaps the end of the last one
 			wear = res.failed ? 0.01 : clamp(wear + P.wearStep * rng.uniform(0.9, 1.1), 0, 1); // blades/bearing serviced after a failure
 		}
 	}
@@ -559,11 +572,11 @@ export class MowerSimulator extends EventEmitter {
 		let zoneTick = 0;
 		const dwellOf = (zone) =>
 			Math.round(((P.zones.get(zone)?.area_m2 ?? 150) / M2_PER_TICK) * rng.uniform(0.95, 1.05));
-		let dwell = dwellOf(PATH[zi]);
+		let dwell = dwellOf(this.zonePath[zi]);
 		let failed = false;
 
 		for (let tick = 0; ; tick++) {
-			const zone = PATH[zi];
+			const zone = this.zonePath[zi];
 			const box = zoneBox(zone);
 			const p = zoneTick / dwell;
 			const sweep = box.row === 1 ? 1 - p : p; // middle row is mown east -> west
@@ -658,9 +671,9 @@ export class MowerSimulator extends EventEmitter {
 			battery -= Math.max(0.03, FIT.drain(drainCurrent) + rng.normal(0, 0.0258));
 			t += TICK_S * 1000;
 			if (++zoneTick >= dwell) {
-				zi = (zi + 1) % PATH.length;
+				zi = (zi + 1) % this.zonePath.length;
 				zoneTick = 0;
-				dwell = dwellOf(PATH[zi]);
+				dwell = dwellOf(this.zonePath[zi]);
 			}
 			if (tick === failAt) {
 				failed = true;
@@ -795,7 +808,8 @@ Usage: node mower-simulator.js [options]
   --seed <n>           reproducible run
   --start <iso>        simulated start time               (default now)
   --first-session <n>  first session_id                   (default last CSV id + 1)
-  HTTP authentication: set MOWER_INGEST_TOKEN in the environment.
+  HTTP authentication: set MOWER_MACHINE_ID and MOWER_MACHINE_TOKEN.
+  --outbox-dir <dir>   durable device queue (default ./mower_outbox)
   --fresh              zones table starts from zero
 `;
 
@@ -833,7 +847,15 @@ function makeSinks(names, v, sim) {
 			sinks.push((m) => process.stdout.write(JSON.stringify(m) + '\n'));
 		} else if (name === 'http') {
 			if (!v.url) throw new Error('--sink http needs --url');
-			sinks.push(createHttpSink(v.url, process.env.MOWER_INGEST_TOKEN, () => sim.stop()));
+			sinks.push(
+				createDurableSink({
+					directory: v['outbox-dir'],
+					url: v.url,
+					machineId: process.env.MOWER_MACHINE_ID,
+					token: process.env.MOWER_MACHINE_TOKEN,
+					onFailure: () => sim.stop()
+				})
+			);
 		} else if (name === 'csv') {
 			const dir = v['out-dir'];
 			fs.mkdirSync(dir, { recursive: true });
@@ -867,6 +889,7 @@ async function main() {
 			sink: { type: 'string', default: 'console' },
 			url: { type: 'string' },
 			'out-dir': { type: 'string', default: 'sim_out' },
+			'outbox-dir': { type: 'string', default: 'mower_outbox' },
 			sessions: { type: 'string' },
 			'gap-seconds': { type: 'string', default: '15' },
 			wear: { type: 'string' },
@@ -893,13 +916,23 @@ async function main() {
 	});
 	process.stdout.on('error', (e) => e.code === 'EPIPE' && process.exit(0));
 	const sinks = makeSinks(v.sink.split(','), v, sim);
-	// Initialize zone relations before sending any session telemetry.
-	for (const sink of sinks) sink({ type: 'zones', data: sim.snapshot().zones });
-	await Promise.all(sinks.map((sink) => sink.flush?.()));
-	sim.on('message', (m) => sinks.forEach((s) => s(m)));
-	process.on('SIGINT', () => (sim.stop(), console.error('\nstopping…')));
-	await sim.start();
-	await Promise.all(sinks.map((sink) => sink.flush?.()));
+	// Drain prior process envelopes with their original run identity first.
+	try {
+		await Promise.all(sinks.map((sink) => sink.flush?.()));
+		// Initialize zone relations before sending any session telemetry.
+		for (const sink of sinks) sink({ type: 'zones', data: sim.snapshot().zones });
+		await Promise.all(sinks.map((sink) => sink.flush?.()));
+		sim.on('message', (m) => sinks.forEach((s) => s(m)));
+		process.once('SIGINT', () => {
+			sim.stop();
+			void Promise.all(sinks.map((s) => s.close?.()));
+			console.error('\nstopping; unacknowledged telemetry remains in the outbox…');
+		});
+		await sim.start();
+		await Promise.all(sinks.map((sink) => sink.flush?.()));
+	} finally {
+		await Promise.all(sinks.map((sink) => sink.close?.()));
+	}
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

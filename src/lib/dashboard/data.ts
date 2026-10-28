@@ -1,5 +1,6 @@
 export interface Reading {
 	timestamp: string;
+	received_at?: string | null;
 	session_id: number;
 	zone_id: number;
 	latitude: number;
@@ -27,6 +28,7 @@ export interface Zone {
 }
 export interface MowerEvent {
 	timestamp: string;
+	received_at?: string | null;
 	session_id: number;
 	zone_id: number;
 	event_type: string;
@@ -78,10 +80,7 @@ export function coverage(zones: Zone[]): number {
 	return area ? zones.reduce((n, z) => n + z.area_m2 * z.coverage_pct, 0) / area : 0;
 }
 export function zonePosition(id: number) {
-	return {
-		x: id <= 10 ? id - 1 : id <= 20 ? id - 11 : id - 21,
-		y: id <= 10 ? 0 : id <= 20 ? 1 : 2
-	};
+	return { x: (id - 1) % 10, y: Math.floor((id - 1) / 10) };
 }
 export function formatTime(value: string | undefined) {
 	return value

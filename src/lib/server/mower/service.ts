@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { PrismaClient } from '@prisma/client';
 import { db } from '../db/index';
-import { getSimulator, type MowerSimulator } from '../mower-simulator.js';
+import { MowerSimulator } from '../mower-simulator.js';
 import { parseMessage, type MowerMessage } from './validation';
-import { persistMessage } from './repository';
+import { IngestionConflict, persistMessage } from './repository';
 import { SerialQueue } from './queue';
+import { ensureDemoFleet, createRun, DEMO_MACHINE } from './fleet';
 
 export type LiveMessage = { type: string; data: unknown; run_id?: string };
 
@@ -26,7 +27,7 @@ export class MowerService {
 	};
 	constructor(
 		private readonly database: PrismaClient,
-		private readonly simulator = () => getSimulator({ speed: 10, fresh: true })
+		private readonly simulator = () => new MowerSimulator({ speed: 10, fresh: true })
 	) {
 		this.emitter.setMaxListeners(0);
 	}
@@ -71,6 +72,17 @@ export class MowerService {
 			});
 		await this.initialization;
 		if (this.failed) throw new Error('Simulation unavailable');
+
+		if (this.runId) {
+			const run = await this.database.simulationRun.findUnique({
+				where: { id: this.runId },
+				include: { cycle: true }
+			});
+			if (run?.cycle?.completed_at)
+				throw new IngestionConflict(
+					'This mowing cycle is complete. Start a new mowing cycle before resuming the simulator.'
+				);
+		}
 		if (!this.sim!.running) {
 			this.loop = this.sim!.start().catch((error) => this.fail(error));
 		}
@@ -80,7 +92,8 @@ export class MowerService {
 		this.sim = this.simulator();
 		const zones = parseMessage({ type: 'zones', data: this.sim.snapshot().zones });
 		const id = randomUUID();
-		await this.database.simulationRun.create({ data: { id, source: 'generate' } });
+		await ensureDemoFleet(this.database);
+		await createRun(this.database, id, DEMO_MACHINE, 'generate');
 		await persistMessage(this.database, id, zones);
 		this.runId = id;
 		this.latest.zones = zones.data as unknown[];
@@ -111,6 +124,16 @@ export class MowerService {
 				.catch((error) => this.fail(error));
 		});
 	}
+	async rollover() {
+		const resume = this.sim?.running ?? false;
+		await this.stop();
+		this.initialization = undefined;
+		this.sim = undefined;
+		this.runId = null;
+		this.latest = { reading: null, session: null, zones: [] };
+		if (resume) await this.start();
+	}
+
 	async stop() {
 		if (this.stopping) return this.stopping;
 		this.stopping = (async () => {
@@ -133,22 +156,16 @@ const shared = globalThis as typeof globalThis & {
 export function getMowerService() {
 	return (shared.mowerService ??= new MowerService(db));
 }
-// External ingestion has an independent queue; validation conflicts don't poison it.
-export async function ingestExternal(runId: string, message: MowerMessage) {
-	const queue = (shared.mowerIngestionQueue ??= new SerialQueue());
-	const result = await queue.add(async () => {
-		try {
-			await db.simulationRun.upsert({
-				where: { id: runId },
-				create: { id: runId, source: 'external' },
-				update: {}
-			});
-			const inserted = await persistMessage(db, runId, message);
-			return { inserted, error: null };
-		} catch (error) {
-			return { inserted: false, error };
-		}
-	});
-	if (result.error) throw result.error;
-	return result.inserted;
+// Database advisory locks serialize each machine across server processes.
+export async function ingestExternal(
+	runId: string,
+	message: MowerMessage,
+	machineId = DEMO_MACHINE,
+	delivery?: { message_id: string }
+) {
+	const run = await db.simulationRun.findUnique({ where: { id: runId } });
+	if (run && run.machine_id !== machineId)
+		throw new IngestionConflict('Run belongs to another machine');
+	await createRun(db, runId, machineId, 'external');
+	return persistMessage(db, runId, message, delivery);
 }

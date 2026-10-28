@@ -58,3 +58,16 @@ test('API rejects cross-origin mutations', async () => {
 	expect(response.status).toBe(403);
 	expect(executed).toBe(false);
 });
+test('API preserves conflict responses from service instances retained across hot reload', async () => {
+	const { api } = await import('../src/lib/server/mower/http');
+	// A reloaded module has a different class identity from the retained service.
+	class IngestionConflict extends Error {}
+	const handler = api(async () => {
+		throw new IngestionConflict('Start a new cycle');
+	});
+	const response = await handler({
+		url: new URL('http://local/api/simulator'),
+		request: new Request('http://local/api/simulator', { method: 'POST' })
+	} as any);
+	expect(response.status).toBe(409);
+});
